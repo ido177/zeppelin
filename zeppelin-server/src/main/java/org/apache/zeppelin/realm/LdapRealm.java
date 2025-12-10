@@ -165,6 +165,7 @@ public class LdapRealm extends DefaultLdapRealm {
   private String userSearchScope = "subtree";
   private String groupSearchScope = "subtree";
   private boolean groupSearchEnableMatchingRuleInChain;
+  private boolean groupSearchNested389 = true;
 
   private String groupSearchBase;
 
@@ -359,7 +360,44 @@ public class LdapRealm extends DefaultLdapRealm {
       NamingEnumeration<SearchResult> searchResultEnum = null;
       SearchControls searchControls = getGroupSearchControls();
       try {
-        if (groupSearchEnableMatchingRuleInChain) {
+        if (groupSearchNested389) {
+          NamingEnumeration<? extends Attribute> attributeEnum = null;
+          NamingEnumeration<?> groups = null;
+
+          String searchFilter = String.format("(objectclass=%1$s)", groupObjectClass);
+          if (groupSearchFilter != null) {
+            searchFilter = expandTemplate(groupSearchFilter, userName);
+          }
+
+          searchResultEnum = ldapCtx.search(
+                  getGroupSearchBase(),
+                  searchFilter,
+                  searchControls);
+          while (searchResultEnum != null && searchResultEnum.hasMore()) {
+            numResults++;
+            final SearchResult person = searchResultEnum.next();
+
+            attributeEnum = person.getAttributes().getAll();
+            while (attributeEnum.hasMore()) {
+              final Attribute attr = attributeEnum.next();
+              if (!memberAttribute.equalsIgnoreCase(attr.getID())) {
+                continue;
+              }
+
+              groups = attr.getAll();
+              while (groups.hasMore()) {
+                String groupName = groups.next().toString();
+                String roleName = roleNameFor(groupName);
+                if (roleName != null) {
+                  roleNames.add(roleName);
+                } else {
+                  roleNames.add(groupName);
+                }
+              }
+            }
+
+          }
+        } else if (groupSearchEnableMatchingRuleInChain) {
           searchResultEnum = ldapCtx.search(
               getGroupSearchBase(),
               String.format(
